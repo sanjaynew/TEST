@@ -1,0 +1,19 @@
+name: Update Dashboard Data
+
+on:
+  repository_dispatch:
+    types: [excel-data-updated]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write data file
+        run: |
+          echo '${{ toJson(github.event.client_payload) }}' > data.json
+
+      - uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update dashboard data from Excel"
