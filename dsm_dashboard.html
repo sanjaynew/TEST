@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSM Settlement Ledger — SS8PL / UP</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1"></script>
+<script>
+  // Fallback in case the primary CDN is blocked
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"><\/script>');
+  }
+</script>
+<style>
+:root{
+  --bg:#070d16;
+  --panel:#0d1826;
+  --panel-2:#111f31;
+  --line:#1c2f45;
+  --text:#dce8f2;
+  --dim:#6f8aa3;
+  --amber:#ffb020;
+  --amber-dim:#ffb02033;
+  --volt:#4fd1c5;
+  --crimson:#ff5c7a;
+  --crimson-dim:#ff5c7a22;
+  --mono: 'IBM Plex Mono', 'Courier New', monospace;
+  --sans: 'IBM Plex Sans', -apple-system, sans-serif;
+}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+*{box-sizing:border-box;margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(circle at 15% 0%, #10203280 0%, transparent 45%),
+    radial-gradient(circle at 90% 10%, #0d2a2a60 0%, transparent 40%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  min-height:100vh;
+  padding:28px 32px 60px;
+}
+
+/* ---- animated grid-line backdrop ---- */
+.grid-backdrop{
+  position:fixed; inset:0; z-index:-1; opacity:.35;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size:42px 42px;
+  mask-image: radial-gradient(circle at 50% 20%, black, transparent 75%);
+}
+
+header{
+  display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:18px;
+  border-bottom:1px solid var(--line);
+  padding-bottom:20px; margin-bottom:26px;
+  animation:dropIn .6s ease both;
+}
+.title-block .eyebrow{
+  font-family:var(--mono); font-size:11px; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--volt); display:flex; align-items:center; gap:8px;
+}
+.pulse-dot{
+  width:7px;height:7px;border-radius:50%;background:var(--volt);
+  box-shadow:0 0 0 0 rgba(79,209,197,.6);
+  animation:pulse 1.8s infinite;
+}
+@keyframes pulse{
+  0%{box-shadow:0 0 0 0 rgba(79,209,197,.55);}
+  70%{box-shadow:0 0 0 9px rgba(79,209,197,0);}
+  100%{box-shadow:0 0 0 0 rgba(79,209,197,0);}
+}
+h1{
+  font-size:28px; font-weight:700; margin-top:6px; letter-spacing:-.01em;
+}
+h1 span{color:var(--amber);}
+.subtitle{color:var(--dim); font-size:13px; margin-top:4px; font-family:var(--mono);}
+
+.filters{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+select{
+  background:var(--panel-2); color:var(--text); border:1px solid var(--line);
+  padding:9px 14px; border-radius:8px; font-family:var(--mono); font-size:12.5px;
+  cursor:pointer; outline:none; transition:border-color .2s;
+}
+select:hover, select:focus{border-color:var(--volt);}
+.reset-btn{
+  background:transparent; color:var(--dim); border:1px solid var(--line);
+  padding:9px 14px; border-radius:8px; font-family:var(--mono); font-size:12.5px;
+  cursor:pointer; transition:.2s;
+}
+.reset-btn:hover{color:var(--amber); border-color:var(--amber);}
+
+/* ---- KPI row ---- */
+.kpi-row{
+  display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:26px;
+}
+@media(max-width:1100px){.kpi-row{grid-template-columns:repeat(2,1fr);}}
+.kpi-card{
+  background:linear-gradient(160deg, var(--panel) 0%, var(--panel-2) 100%);
+  border:1px solid var(--line); border-radius:12px; padding:18px 18px 16px;
+  position:relative; overflow:hidden;
+  opacity:0; transform:translateY(14px);
+  animation:riseIn .55s ease forwards;
+}
+.kpi-card::before{
+  content:''; position:absolute; top:0; left:0; width:100%; height:2px;
+  background:linear-gradient(90deg, var(--volt), transparent);
+}
+.kpi-card:nth-child(1){animation-delay:.05s;}
+.kpi-card:nth-child(2){animation-delay:.12s;}
+.kpi-card:nth-child(3){animation-delay:.19s;}
+.kpi-card:nth-child(4){animation-delay:.26s;}
+.kpi-card:nth-child(5){animation-delay:.33s;}
+.kpi-label{font-family:var(--mono); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim);}
+.kpi-value{font-family:var(--mono); font-size:25px; font-weight:600; margin-top:8px; letter-spacing:-.02em;}
+.kpi-value.pos{color:var(--volt);}
+.kpi-value.neg{color:var(--crimson);}
+.kpi-value.neutral{color:var(--amber);}
+.kpi-sub{font-size:11.5px; color:var(--dim); margin-top:5px;}
+
+/* ---- charts ---- */
+.chart-row{display:grid; grid-template-columns:1.55fr 1fr; gap:16px; margin-bottom:16px;}
+@media(max-width:980px){.chart-row{grid-template-columns:1fr;}}
+.panel{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px;
+  opacity:0; animation:riseIn .6s ease forwards; animation-delay:.4s;
+}
+.panel-head{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px;}
+.panel-title{font-size:14.5px; font-weight:600;}
+.panel-note{font-family:var(--mono); font-size:10.5px; color:var(--dim);}
+.chart-wrap{position:relative; height:280px;}
+
+/* ---- table ---- */
+.table-panel{
+  background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:20px;
+  opacity:0; animation:riseIn .6s ease forwards; animation-delay:.5s;
+}
+table{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:12.5px;}
+thead th{
+  text-align:left; padding:10px 12px; color:var(--dim); font-weight:500;
+  text-transform:uppercase; letter-spacing:.06em; font-size:10.5px;
+  border-bottom:1px solid var(--line); cursor:pointer; user-select:none; white-space:nowrap;
+}
+thead th:hover{color:var(--amber);}
+thead th .arrow{opacity:.5; margin-left:4px; font-size:9px;}
+tbody td{padding:10px 12px; border-bottom:1px solid #101c2b;}
+tbody tr{transition:background .15s; opacity:0; animation:fadeRow .4s ease forwards;}
+tbody tr:hover{background:#0f1e2f;}
+.amt{font-weight:600;}
+.amt.pos{color:var(--volt);}
+.amt.neg{color:var(--crimson);}
+.badge{
+  display:inline-block; padding:2px 8px; border-radius:20px; font-size:10.5px;
+  background:var(--amber-dim); color:var(--amber); font-family:var(--mono);
+}
+
+@keyframes riseIn{to{opacity:1; transform:translateY(0);}}
+@keyframes dropIn{from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:translateY(0);}}
+@keyframes fadeRow{to{opacity:1;}}
+
+footer{
+  margin-top:24px; text-align:center; color:var(--dim); font-family:var(--mono); font-size:11px;
+}
+</style>
+</head>
+<body>
+<div class="grid-backdrop"></div>
+
+<header>
+  <div class="title-block">
+    <div class="eyebrow"><span class="pulse-dot"></span> LIVE SETTLEMENT FEED</div>
+    <h1>DSM Settlement <span>Ledger</span></h1>
+    <div class="subtitle">SPV: SS8PL &nbsp;·&nbsp; State: UP &nbsp;·&nbsp; FY 23-24 &nbsp;·&nbsp; Weekly Deviation Settlement Mechanism amounts</div>
+  </div>
+  <div class="filters">
+    <select id="monthFilter"><option value="all">All Months</option></select>
+    <select id="signFilter">
+      <option value="all">All Weeks</option>
+      <option value="pos">Surplus (+) only</option>
+      <option value="neg">Deficit (–) only</option>
+    </select>
+    <button class="reset-btn" id="resetBtn">Reset ⟳</button>
+  </div>
+</header>
+
+<section class="kpi-row" id="kpiRow"></section>
+
+<section class="chart-row">
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Weekly DSM Flow</div>
+      <div class="panel-note" id="chartNote">19 settlement weeks</div>
+    </div>
+    <div class="chart-wrap"><canvas id="flowChart"></canvas></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <div class="panel-title">Monthly Net Settlement</div>
+      <div class="panel-note">₹, aggregated</div>
+    </div>
+    <div class="chart-wrap"><canvas id="monthChart"></canvas></div>
+  </div>
+</section>
+
+<section class="table-panel">
+  <div class="panel-head">
+    <div class="panel-title">Settlement Register</div>
+    <div class="panel-note" id="tableNote">Click a column to sort</div>
+  </div>
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th data-key="Week No.">Week <span class="arrow">↕</span></th>
+        <th data-key="Month">Month <span class="arrow">↕</span></th>
+        <th data-key="From">From <span class="arrow">↕</span></th>
+        <th data-key="To">To <span class="arrow">↕</span></th>
+        <th data-key="DSM Amount">DSM Amount (₹) <span class="arrow">↕</span></th>
+        <th data-key="type">Type <span class="arrow">↕</span></th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  </div>
+</section>
+
+<footer>Source: testing_excel.xlsx &nbsp;·&nbsp; Rendered locally, no external data calls</footer>
+
+<script>
+const RAW = [{"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 25, "From": "2023-09-11", "To": "2023-09-17", "DSM Amount": 9590114}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 26, "From": "2023-09-18", "To": "2023-09-24", "DSM Amount": 13689}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 27, "From": "2023-09-25", "To": "2023-09-30", "DSM Amount": 500000}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 27, "From": "2023-10-01", "To": "2023-10-01", "DSM Amount": 606.14}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 28, "From": "2023-10-02", "To": "2023-10-08", "DSM Amount": 4397}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 29, "From": "2023-10-09", "To": "2023-10-15", "DSM Amount": 120676}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 30, "From": "2023-10-16", "To": "2023-10-22", "DSM Amount": -12961}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 31, "From": "2023-10-23", "To": "2023-10-29", "DSM Amount": -62673}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 32, "From": "2023-10-30", "To": "2023-10-30", "DSM Amount": 12612.71}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 32, "From": "2023-11-01", "To": "2023-11-05", "DSM Amount": 75676.29}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 33, "From": "2023-11-06", "To": "2023-11-12", "DSM Amount": 24377}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 34, "From": "2023-11-13", "To": "2023-11-19", "DSM Amount": 41500}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 35, "From": "2023-11-20", "To": "2023-11-26", "DSM Amount": -718}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 36, "From": "2023-11-27", "To": "2023-11-30", "DSM Amount": 39216.57}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 36, "From": "2023-12-01", "To": "2023-12-03", "DSM Amount": 29412.43}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 37, "From": "2023-12-04", "To": "2023-12-10", "DSM Amount": -15388}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 38, "From": "2023-12-11", "To": "2023-12-17", "DSM Amount": 28742}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 39, "From": "2023-12-18", "To": "2023-12-24", "DSM Amount": 210987}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 40, "From": "2023-12-25", "To": "2023-12-31", "DSM Amount": 276655}];
+
+const DATA = RAW.map(d => ({...d, type: d['DSM Amount'] >= 0 ? 'Surplus' : 'Deficit'}));
+
+const COLORS = { volt:'#4fd1c5', amber:'#ffb020', crimson:'#ff5c7a', dim:'#6f8aa3' };
+
+function fmtINR(v){
+  const abs = Math.abs(v);
+  const sign = v < 0 ? '-' : '';
+  if(abs >= 1e7) return sign + '₹' + (abs/1e7).toFixed(2) + 'Cr';
+  if(abs >= 1e5) return sign + '₹' + (abs/1e5).toFixed(2) + 'L';
+  if(abs >= 1e3) return sign + '₹' + (abs/1e3).toFixed(1) + 'K';
+  return sign + '₹' + abs.toFixed(0);
+}
+function fmtDate(s){
+  const d = new Date(s);
+  return d.toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+}
+
+let sortKey = 'Week No.';
+let sortDir = 1;
+let monthFilter = 'all';
+let signFilter = 'all';
+
+function getFiltered(){
+  return DATA.filter(d => {
+    if(monthFilter !== 'all' && d.Month !== monthFilter) return false;
+    if(signFilter === 'pos' && d['DSM Amount'] < 0) return false;
+    if(signFilter === 'neg' && d['DSM Amount'] >= 0) return false;
+    return true;
+  });
+}
+
+function renderKPIs(rows){
+  const total = rows.reduce((s,d)=>s+d['DSM Amount'],0);
+  const avg = rows.length ? total/rows.length : 0;
+  const posWeeks = rows.filter(d=>d['DSM Amount']>=0).length;
+  const negWeeks = rows.length - posWeeks;
+  const maxRow = rows.reduce((a,b)=> b['DSM Amount']>a['DSM Amount']?b:a, rows[0]||{'DSM Amount':0,'Week No.':'-'});
+  const minRow = rows.reduce((a,b)=> b['DSM Amount']<a['DSM Amount']?b:a, rows[0]||{'DSM Amount':0,'Week No.':'-'});
+
+  const kpis = [
+    {label:'Net Settlement', value:fmtINR(total), cls: total>=0?'pos':'neg', sub: rows.length+' weeks in view'},
+    {label:'Avg / Week', value:fmtINR(avg), cls: avg>=0?'pos':'neg', sub:'mean weekly deviation'},
+    {label:'Surplus Weeks', value:posWeeks, cls:'pos', sub:posWeeks+' of '+rows.length+' weeks'},
+    {label:'Deficit Weeks', value:negWeeks, cls:'neg', sub:negWeeks+' of '+rows.length+' weeks'},
+    {label:'Peak Week', value:'Wk '+maxRow['Week No.'], cls:'neutral', sub:fmtINR(maxRow['DSM Amount'])+' settled'},
+  ];
+
+  document.getElementById('kpiRow').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value ${k.cls}">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>
+  `).join('');
+}
+
+let flowChart, monthChart;
+
+function renderFlowChart(rows){
+  const sorted = [...rows].sort((a,b)=> new Date(a.From) - new Date(b.From));
+  const labels = sorted.map(d => 'W'+d['Week No.']+' · '+fmtDate(d.From));
+  const values = sorted.map(d => d['DSM Amount']);
+  const pointColors = values.map(v => v>=0 ? COLORS.volt : COLORS.crimson);
+
+  if(flowChart) flowChart.destroy();
+  const ctx = document.getElementById('flowChart').getContext('2d');
+  const gradient = ctx.createLinearGradient(0,0,0,280);
+  gradient.addColorStop(0, 'rgba(79,209,197,0.28)');
+  gradient.addColorStop(1, 'rgba(79,209,197,0.0)');
+
+  flowChart = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[{
+      label:'DSM Amount',
+      data: values,
+      borderColor: COLORS.amber,
+      backgroundColor: gradient,
+      borderWidth: 2.5,
+      pointBackgroundColor: pointColors,
+      pointBorderColor: '#070d16',
+      pointBorderWidth: 1.5,
+      pointRadius: 4,
+      pointHoverRadius: 7,
+      fill: true,
+      tension: 0.35,
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{ duration:900, easing:'easeOutQuart' },
+      interaction:{mode:'index', intersect:false},
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#0d1826', borderColor:'#1c2f45', borderWidth:1,
+          titleColor:'#dce8f2', bodyColor:'#dce8f2', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'},
+          callbacks:{ label: c => ' ' + fmtINR(c.parsed.y) }
+        }
+      },
+      scales:{
+        x:{ grid:{color:'#101c2b'}, ticks:{color:'#6f8aa3', font:{family:'IBM Plex Mono', size:10}, maxRotation:60, minRotation:0} },
+        y:{ grid:{color:'#101c2b'}, ticks:{color:'#6f8aa3', font:{family:'IBM Plex Mono', size:10}, callback:v=>fmtINR(v)} }
+      }
+    }
+  });
+}
+
+function renderMonthChart(rows){
+  const order = ['Sep-23','Oct-23','Nov-23','Dec-23'];
+  const byMonth = {};
+  rows.forEach(d => { byMonth[d.Month] = (byMonth[d.Month]||0) + d['DSM Amount']; });
+  const labels = order.filter(m => byMonth[m] !== undefined);
+  const values = labels.map(m => byMonth[m]);
+  const colors = values.map(v => v>=0 ? COLORS.volt : COLORS.crimson);
+
+  if(monthChart) monthChart.destroy();
+  const ctx = document.getElementById('monthChart').getContext('2d');
+  monthChart = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{
+      label:'Net DSM', data: values,
+      backgroundColor: colors, borderRadius:6, maxBarThickness:52,
+    }]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{ duration:900, easing:'easeOutBack' },
+      plugins:{
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:'#0d1826', borderColor:'#1c2f45', borderWidth:1,
+          titleColor:'#dce8f2', bodyColor:'#dce8f2', titleFont:{family:'IBM Plex Mono'}, bodyFont:{family:'IBM Plex Mono'},
+          callbacks:{ label: c => ' ' + fmtINR(c.parsed.y) }
+        }
+      },
+      scales:{
+        x:{ grid:{display:false}, ticks:{color:'#6f8aa3', font:{family:'IBM Plex Mono', size:10.5}} },
+        y:{ grid:{color:'#101c2b'}, ticks:{color:'#6f8aa3', font:{family:'IBM Plex Mono', size:10}, callback:v=>fmtINR(v)} }
+      }
+    }
+  });
+}
+
+function renderTable(rows){
+  const sorted = [...rows].sort((a,b)=>{
+    let av = a[sortKey], bv = b[sortKey];
+    if(sortKey === 'From' || sortKey === 'To'){ av = new Date(av); bv = new Date(bv); }
+    if(av < bv) return -1*sortDir;
+    if(av > bv) return 1*sortDir;
+    return 0;
+  });
+
+  document.getElementById('tableBody').innerHTML = sorted.map((d,i) => `
+    <tr style="animation-delay:${Math.min(i*0.03,0.5)}s">
+      <td>${d['Week No.']}</td>
+      <td>${d.Month}</td>
+      <td>${fmtDate(d.From)}</td>
+      <td>${fmtDate(d.To)}</td>
+      <td class="amt ${d['DSM Amount']>=0?'pos':'neg'}">${d['DSM Amount']>=0?'+':''}${d['DSM Amount'].toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
+      <td><span class="badge" style="${d.type==='Deficit' ? 'background:rgba(255,92,122,0.15);color:#ff5c7a;' : ''}">${d.type}</span></td>
+    </tr>
+  `).join('');
+
+  document.getElementById('tableNote').textContent = sorted.length + ' rows · sorted by ' + sortKey + (sortDir===1?' ↑':' ↓');
+}
+
+function renderAll(){
+  const rows = getFiltered();
+  renderKPIs(rows);
+  renderFlowChart(rows);
+  renderMonthChart(rows);
+  renderTable(rows);
+  document.getElementById('chartNote').textContent = rows.length + ' settlement weeks';
+}
+
+// populate month filter
+const months = [...new Set(DATA.map(d=>d.Month))];
+document.getElementById('monthFilter').innerHTML += months.map(m=>`<option value="${m}">${m}</option>`).join('');
+
+document.getElementById('monthFilter').addEventListener('change', e => { monthFilter = e.target.value; renderAll(); });
+document.getElementById('signFilter').addEventListener('change', e => { signFilter = e.target.value; renderAll(); });
+document.getElementById('resetBtn').addEventListener('click', () => {
+  monthFilter='all'; signFilter='all';
+  document.getElementById('monthFilter').value='all';
+  document.getElementById('signFilter').value='all';
+  renderAll();
+});
+document.querySelectorAll('thead th').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.key;
+    if(sortKey === key){ sortDir *= -1; } else { sortKey = key; sortDir = 1; }
+    renderTable(getFiltered());
+  });
+});
+
+function boot(){
+  if (typeof Chart === 'undefined') { setTimeout(boot, 50); return; }
+  renderAll();
+}
+boot();
+</script>
+</body>
+</html>
