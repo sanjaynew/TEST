@@ -162,6 +162,10 @@ tbody tr:hover{background:#0f1e2f;}
 footer{
   margin-top:24px; text-align:center; color:var(--dim); font-family:var(--mono); font-size:11px;
 }
+
+.loading-note{
+  font-family:var(--mono); font-size:12px; color:var(--dim); text-align:center; padding:40px 0;
+}
 </style>
 </head>
 <body>
@@ -190,7 +194,7 @@ footer{
   <div class="panel">
     <div class="panel-head">
       <div class="panel-title">Weekly DSM Flow</div>
-      <div class="panel-note" id="chartNote">19 settlement weeks</div>
+      <div class="panel-note" id="chartNote">Loading…</div>
     </div>
     <div class="chart-wrap"><canvas id="flowChart"></canvas></div>
   </div>
@@ -220,17 +224,48 @@ footer{
         <th data-key="type">Type <span class="arrow">↕</span></th>
       </tr>
     </thead>
-    <tbody id="tableBody"></tbody>
+    <tbody id="tableBody"><tr><td colspan="6" class="loading-note">Loading settlement data…</td></tr></tbody>
   </table>
   </div>
 </section>
 
-<footer>Source: testing_excel.xlsx &nbsp;·&nbsp; Rendered locally, no external data calls</footer>
+<footer>Source: data.json (auto-synced from OneDrive Excel) &nbsp;·&nbsp; Last loaded: <span id="loadedAt">—</span></footer>
 
 <script>
-const RAW = [{"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 25, "From": "2023-09-11", "To": "2023-09-17", "DSM Amount": 9590114}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 26, "From": "2023-09-18", "To": "2023-09-24", "DSM Amount": 13689}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 27, "From": "2023-09-25", "To": "2023-09-30", "DSM Amount": 500000}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Sep-23", "Week No.": 27, "From": "2023-10-01", "To": "2023-10-01", "DSM Amount": 606.14}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 28, "From": "2023-10-02", "To": "2023-10-08", "DSM Amount": 4397}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 29, "From": "2023-10-09", "To": "2023-10-15", "DSM Amount": 120676}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 30, "From": "2023-10-16", "To": "2023-10-22", "DSM Amount": -12961}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 31, "From": "2023-10-23", "To": "2023-10-29", "DSM Amount": -62673}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Oct-23", "Week No.": 32, "From": "2023-10-30", "To": "2023-10-30", "DSM Amount": 12612.71}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 32, "From": "2023-11-01", "To": "2023-11-05", "DSM Amount": 75676.29}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 33, "From": "2023-11-06", "To": "2023-11-12", "DSM Amount": 24377}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 34, "From": "2023-11-13", "To": "2023-11-19", "DSM Amount": 41500}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 35, "From": "2023-11-20", "To": "2023-11-26", "DSM Amount": -718}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Nov-23", "Week No.": 36, "From": "2023-11-27", "To": "2023-11-30", "DSM Amount": 39216.57}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 36, "From": "2023-12-01", "To": "2023-12-03", "DSM Amount": 29412.43}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 37, "From": "2023-12-04", "To": "2023-12-10", "DSM Amount": -15388}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 38, "From": "2023-12-11", "To": "2023-12-17", "DSM Amount": 28742}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 39, "From": "2023-12-18", "To": "2023-12-24", "DSM Amount": 210987}, {"State": "UP", "SPV": "SS8PL", "FY": "23-24", "Month": "Dec-23", "Week No.": 40, "From": "2023-12-25", "To": "2023-12-31", "DSM Amount": 276655}];
+// ----- live data loading -----
+let RAW = [];
+let DATA = [];
 
-const DATA = RAW.map(d => ({...d, type: d['DSM Amount'] >= 0 ? 'Surplus' : 'Deficit'}));
+function excelDateToISO(serial){
+  // Handles both excel serial numbers (e.g. 45180) and already-ISO strings (e.g. "2023-09-11")
+  if (typeof serial === 'string' && isNaN(serial)) return serial;
+  const num = Number(serial);
+  const utcDays = Math.floor(num - 25569);
+  const utcValue = utcDays * 86400;
+  const date = new Date(utcValue * 1000);
+  return date.toISOString().split('T')[0];
+}
+
+async function loadData(){
+  const res = await fetch('data.json?t=' + Date.now());
+  const json = await res.json();
+  const rows = Array.isArray(json) ? json : (json.value || []);
+
+  RAW = rows.map(d => ({
+    State: d.State,
+    SPV: d.SPV,
+    FY: d.FY,
+    Month: d.Month,
+    'Week No.': Number(d['Week No.'] ?? d['Week No_x002e_']),
+    From: excelDateToISO(d.From),
+    To: excelDateToISO(d.To),
+    'DSM Amount': Number(d['DSM Amount'])
+  }));
+
+  DATA = RAW.map(d => ({...d, type: d['DSM Amount'] >= 0 ? 'Surplus' : 'Deficit'}));
+
+  document.getElementById('loadedAt').textContent = new Date().toLocaleString('en-IN');
+}
 
 const COLORS = { volt:'#4fd1c5', amber:'#ffb020', crimson:'#ff5c7a', dim:'#6f8aa3' };
 
@@ -267,7 +302,6 @@ function renderKPIs(rows){
   const posWeeks = rows.filter(d=>d['DSM Amount']>=0).length;
   const negWeeks = rows.length - posWeeks;
   const maxRow = rows.reduce((a,b)=> b['DSM Amount']>a['DSM Amount']?b:a, rows[0]||{'DSM Amount':0,'Week No.':'-'});
-  const minRow = rows.reduce((a,b)=> b['DSM Amount']<a['DSM Amount']?b:a, rows[0]||{'DSM Amount':0,'Week No.':'-'});
 
   const kpis = [
     {label:'Net Settlement', value:fmtINR(total), cls: total>=0?'pos':'neg', sub: rows.length+' weeks in view'},
@@ -337,7 +371,7 @@ function renderFlowChart(rows){
 }
 
 function renderMonthChart(rows){
-  const order = ['Sep-23','Oct-23','Nov-23','Dec-23'];
+  const order = [...new Set(rows.map(d=>d.Month))];
   const byMonth = {};
   rows.forEach(d => { byMonth[d.Month] = (byMonth[d.Month]||0) + d['DSM Amount']; });
   const labels = order.filter(m => byMonth[m] !== undefined);
@@ -403,9 +437,11 @@ function renderAll(){
   document.getElementById('chartNote').textContent = rows.length + ' settlement weeks';
 }
 
-// populate month filter
-const months = [...new Set(DATA.map(d=>d.Month))];
-document.getElementById('monthFilter').innerHTML += months.map(m=>`<option value="${m}">${m}</option>`).join('');
+function populateMonthFilter(){
+  const months = [...new Set(DATA.map(d=>d.Month))];
+  const sel = document.getElementById('monthFilter');
+  sel.innerHTML = '<option value="all">All Months</option>' + months.map(m=>`<option value="${m}">${m}</option>`).join('');
+}
 
 document.getElementById('monthFilter').addEventListener('change', e => { monthFilter = e.target.value; renderAll(); });
 document.getElementById('signFilter').addEventListener('change', e => { signFilter = e.target.value; renderAll(); });
@@ -423,9 +459,16 @@ document.querySelectorAll('thead th').forEach(th => {
   });
 });
 
-function boot(){
+async function boot(){
   if (typeof Chart === 'undefined') { setTimeout(boot, 50); return; }
-  renderAll();
+  try {
+    await loadData();
+    populateMonthFilter();
+    renderAll();
+  } catch (err) {
+    document.getElementById('tableBody').innerHTML =
+      '<tr><td colspan="6" class="loading-note">Could not load data.json — ' + err.message + '</td></tr>';
+  }
 }
 boot();
 </script>
